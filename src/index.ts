@@ -269,6 +269,20 @@ function advanceCursor(cursor: RangeCursor<GutterMarker>, collect: GutterMarker[
   }
 }
 
+function getNextNode(node: Node): Node | null {
+  if (node instanceof HTMLElement && node.classList.contains('cm-line')) return node
+  if (node.nodeType === Node.TEXT_NODE && node.textContent !== '\u200B') return node.parentNode
+  if (node.firstChild) return getNextNode(node.firstChild)
+  if (node.nextSibling) return getNextNode(node.nextSibling)
+  let parent = node.parentNode
+  while (parent) {
+    if (parent instanceof Element && parent.classList.contains('cm-line')) return parent
+    if (parent.nextSibling) return getNextNode(parent.nextSibling)
+    parent = parent.parentNode
+  }
+  return null
+}
+
 class UpdateContext {
   cursor: RangeCursor<GutterMarker>
   localMarkers: GutterMarker[] = []
@@ -289,13 +303,39 @@ class UpdateContext {
     if (localMarkers.length == 0 && !gutter.config.renderEmptyElements) return
 
     let above = line.top - this.height
+    let dom: HTMLElement;
     if (this.i == gutter.elements.length) {
       let newElt = new GutterElement(view, line.height, above, localMarkers)
       gutter.elements.push(newElt)
       gutter.dom.appendChild(newElt.dom)
+      dom = newElt.dom
     } else {
-      gutter.elements[this.i].update(view, line.height, above, localMarkers)
+      let elt = gutter.elements[this.i]
+      elt.update(view, line.height, above, localMarkers)
+      dom = elt.dom
     }
+    view.requestMeasure({
+      read: view => {
+        let paddingTop = ''
+        let lineHeight = ''
+        try {
+          let domAtPos = view.domAtPos(line.from)
+          let domNode = domAtPos.node.childNodes[domAtPos.offset]
+          let lineNode = domNode
+          while (lineNode.parentNode && lineNode.parentNode !== view.contentDOM) {
+            lineNode = lineNode.parentNode
+          }
+          paddingTop = getComputedStyle(lineNode).paddingTop
+          let node = getNextNode(domNode)
+          lineHeight = getComputedStyle(node as HTMLElement).lineHeight
+        } catch(e) { }
+        return {paddingTop, lineHeight}
+      },
+      write: ({paddingTop, lineHeight}) => {
+        dom.style.paddingTop = paddingTop
+        dom.style.lineHeight = lineHeight
+      }
+    })
     this.height = line.bottom
     this.i++
   }
@@ -342,7 +382,7 @@ class SingleGutterView {
     }
     let vp = update.view.viewport
     return !RangeSet.eq(this.markers, prevMarkers, vp.from, vp.to) ||
-      (this.config.lineMarkerChange ? this.config.lineMarkerChange(update) : false)
+        (this.config.lineMarkerChange ? this.config.lineMarkerChange(update) : false)
   }
 
   destroy() {
