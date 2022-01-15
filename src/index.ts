@@ -203,13 +203,16 @@ const gutterView = ViewPlugin.fromClass(class {
     let lineClasses = RangeSet.iter(this.view.state.facet(gutterLineClass), this.view.viewport.from)
     let classSet: GutterMarker[] = []
     let contexts = this.gutters.map(gutter => new UpdateContext(gutter, this.view.viewport, -this.view.documentPadding.top))
+    let lastLineNum = -1
     for (let line of this.view.viewportLineBlocks) {
+      let lineNum = this.view.state.doc.lineAt(line.from).number
       let text: BlockInfo | undefined
       if (Array.isArray(line.type)) {
         for (let b of line.type) if (b.type == BlockType.Text) { text = b; break }
       } else {
-        text = line.type == BlockType.Text ? line : undefined
+        text = line.type == BlockType.Text || lastLineNum < lineNum ? line : undefined
       }
+      lastLineNum = lineNum
       if (!text) continue
 
       if (classSet.length) classSet = []
